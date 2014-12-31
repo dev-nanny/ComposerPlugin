@@ -1,0 +1,37 @@
+{
+    "name": "dev-nanny/composer-plugin",
+    "description": "Add dev-nanny to any PHP based project using Composer",
+    "keywords": ["quality-assurance", "composer", "plugin", "composer-plugin"],
+    "license": "GPL-3.0+",
+    "type": "composer-plugin",
+    "authors": [
+        {
+            "name": "Potherca",
+            "homepage": "http://pother.ca/",
+            "email": "potherca@gmail.com",
+            "role": "Kick-ass Web Developer"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "php": ">=5.3",
+        "composer-plugin-api": "~1.0",
+        "dev-nanny/git-hook": "~0.1"
+    },
+    "require-dev": {
+        "composer/composer": "~1.0@dev",
+        "phpunit/phpunit": "~4.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "DevNanny\\Composer\\Plugin\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {"DevNanny\\Composer\\Plugin\\": "tests/"},
+        "psr-4": {"DevNanny\\Connector\\": "vendor/dev-nanny/connector-base/tests/"}
+    },
+    "extra": {
+        "class": "DevNanny\\Composer\\Plugin\\GitHookInstaller"
+    }
+}
