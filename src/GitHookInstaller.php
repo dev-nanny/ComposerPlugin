@@ -8,7 +8,9 @@ use Composer\Plugin\PluginInterface;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\Script\CommandEvent;
 use Composer\Script\ScriptEvents;
+use DevNanny\Composer\Plugin\Interfaces\DecoratorInterface;
 use DevNanny\GitHook\Installer;
+use DevNanny\GitHook\Interfaces\InstallerInterface;
 use DevNanny\GitHook\RepositoryContainer;
 
 class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
@@ -17,14 +19,62 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
     const VENDOR = 'dev-nanny';
     const PROJECT = 'composer-plugin';
 
+    const MESSAGE_HOOK_ALREADY_EXISTS = 'Another pre-commit hook already exists. Do you want to replace it?';
+    const MESSAGE_INSTALL_SUCCESS = 'Installed %s pre-commit hook';
+    const MESSAGE_INSTALL_FAILURE = 'Could not install %s pre-commit-hook';
+    const MESSAGE_NOT_A_GIT_REPOSITORY = 'Directory "%s" is not a git repository';
+
     /** @var Composer */
     private $composer;
     /** @var IOInterface */
     private $io;
+    /** @var InstallerInterface */
+    private $installer;
+    /** @var RepositoryContainer */
+    private $repositoryContainer;
+    /** @var MessageDecorator */
+    private $decorator;
 
     //////////////////////////// SETTERS AND GETTERS \\\\\\\\\\\\\\\\\\\\\\\\\\\
-    //////////////////////////////// PUBLIC API \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    /**
+     * @return DecoratorInterface
+     */
+    private function getDecorator()
+    {
+        if ($this->decorator === null) {
+            $this->decorator = new MessageDecorator();
+        }
 
+        return $this->decorator;
+    }
+
+    /**
+     * @return InstallerInterface
+     */
+    private function getInstaller()
+    {
+        if ($this->installer === null) {
+            $container = $this->getRepositoryContainer();
+            $this->installer = new Installer($container);
+        }
+
+        return $this->installer;
+    }
+
+    /**
+     * @return RepositoryContainer
+     */
+    private function getRepositoryContainer()
+    {
+        if ($this->repositoryContainer === null) {
+            $path = $this->getRepositoryPath();
+            $this->repositoryContainer = new RepositoryContainer($path);
+        }
+
+        return $this->repositoryContainer;
+    }
+
+    //////////////////////////////// PUBLIC API \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
     final public function activate(Composer $composer, IOInterface $io)
     {
         $this->composer = $composer;
@@ -34,52 +84,31 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
     final public static function getSubscribedEvents()
     {
         return array(
-            /*
-            ConsoleEvents::COMMAND => 'consoleCommandEventHandler',
-            ConsoleEvents::TERMINATE => 'consoleTerminateEventHandler',
-            ConsoleEvents::EXCEPTION => 'consoleExceptionEventHandler',
-
-            InstallerEvents::PRE_DEPENDENCIES_SOLVING => 'installerPreDependenciesSolvingEventHandler',
-            InstallerEvents::POST_DEPENDENCIES_SOLVING => 'installerPostDependenciesSolvingEventHandler',
-
-            PluginEvents::PRE_FILE_DOWNLOAD => 'pluginPreFileDownloadEventHandler',
-            PluginEvents::COMMAND => 'pluginCommandEventHandler',
-
-            ScriptEvents::PRE_ARCHIVE_CMD => 'scriptPreArchiveCommandEventHandler',
-            ScriptEvents::POST_ARCHIVE_CMD => 'scriptPostArchiveCommandEventHandler',
-            ScriptEvents::PRE_AUTOLOAD_DUMP => 'scriptPrePostAutoloadDumpEventHandler',
-            ScriptEvents::POST_AUTOLOAD_DUMP => 'scriptPostAutoloadDumpEventHandler',
-            //ScriptEvents::PRE_CREATE_PROJECT_CMD => 'scriptPreCreateProjectCommandEventHandler',
-            ScriptEvents::POST_CREATE_PROJECT_CMD => 'scriptPostCreateProjectCommandEventHandler',
-            ScriptEvents::PRE_INSTALL_CMD => 'scriptPreInstallCommandEventHandler',
-            ScriptEvents::PRE_PACKAGE_INSTALL => 'scriptPrePackageInstallEventHandler',
-            ScriptEvents::POST_PACKAGE_INSTALL => 'scriptPostPackageInstallEventHandler',
-            ScriptEvents::PRE_PACKAGE_UNINSTALL => 'scriptPrePackageUninstallEventHandler',
-            ScriptEvents::POST_PACKAGE_UNINSTALL => 'scriptPostPackageUninstallEventHandler',
-            ScriptEvents::PRE_PACKAGE_UPDATE => 'scriptPrePackageUpdateEventHandler',
-            ScriptEvents::POST_PACKAGE_UPDATE => 'scriptPostPackageUpdateEventHandler',
-            //ScriptEvents::PRE_ROOT_PACKAGE_INSTALL => 'scriptPreRootPackageInstallEventHandler',
-            ScriptEvents::POST_ROOT_PACKAGE_INSTALL => 'scriptPostRootPackageInstallEventHandler',
-            ScriptEvents::PRE_STATUS_CMD => 'scriptPreStatusCommandEventHandler',
-            ScriptEvents::POST_STATUS_CMD => 'scriptPostStatusCommandEventHandler',
-            ScriptEvents::PRE_UPDATE_CMD => 'scriptPreUpdateCommandEventHandler',
-            */
-            ScriptEvents::POST_INSTALL_CMD => 'scriptPostInstallCommandEventHandler',
-            ScriptEvents::POST_UPDATE_CMD => 'scriptPostUpdateCommandEventHandler',
+            ScriptEvents::POST_INSTALL_CMD => 'install',
+            ScriptEvents::POST_UPDATE_CMD => 'install',
         );
     }
 
     final public function install(CommandEvent $event)
     {
-        //@TODO: TRY/CATCH for eventualities and add nice messages for the user
-        //@TODO: When the hook exists but does not match, ask to overwrite using $this->io->ask[etc]
+        $this->io = $event->getIO();
 
-        $path = $this->getRepositoryPath();
-
-        $container = new RepositoryContainer($path);
-        $installer = new Installer($container);
-
-        $installer->install(Installer::PRE_COMMIT);
+        if ($this->isGitRepository() === false) {
+            $this->write(
+                'error',
+                self::MESSAGE_INSTALL_FAILURE . '.' . self::MESSAGE_NOT_A_GIT_REPOSITORY,
+                self::VENDOR,
+                $this->getRepositoryPath()
+            );
+        } else {
+            //@TODO: TRY/CATCH for eventualities and add nice messages for the user
+            $installed = $this->doInstall();
+            if ($installed === true) {
+                $this->write('info', self::MESSAGE_INSTALL_SUCCESS, self::VENDOR);
+            } else {
+                $this->write('error', self::MESSAGE_INSTALL_FAILURE, self::VENDOR);
+            }
+        }
     }
 
     ////////////////////////////// UTILITY METHODS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -88,17 +117,85 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
      */
     private function getRepositoryPath()
     {
-        $currentDirectory = __DIR__;
+        static $path;
 
-        $vendorDirectory = 'vendor/' . self::VENDOR . '/' . self::PROJECT . '/src';
-        $length = strlen($vendorDirectory);
-        if (substr($currentDirectory, -$length) === $vendorDirectory) {
-            $path = substr($currentDirectory, 0, -$length);
-        } else {
-            $path = substr($currentDirectory, 0, -strlen('src'));
+        if ($path === null) {
+            $currentDirectory = __DIR__;
+
+            $vendorDirectory = 'vendor/' . self::VENDOR . '/' . self::PROJECT . '/src';
+            $length = strlen($vendorDirectory);
+            if (substr($currentDirectory, -$length) === $vendorDirectory) {
+                $path = substr($currentDirectory, 0, -$length);
+            } else {
+                $path = substr($currentDirectory, 0, -strlen('src'));
+            }
         }
-        var_dump($path);
+
         return $path;
+    }
+
+    /**
+     * @param string $type
+     * @param string $message
+     */
+    private function write($type, $message)
+    {
+        $parameters = func_get_args();
+        array_shift($parameters);
+
+        $message = call_user_func_array('sprintf', $parameters);
+        $message = $this->decorate($message);
+
+        $message = sprintf('<%1$s>%2$s</%1$s>', $type, $message);
+
+        $this->io->write($message);
+    }
+
+    /**
+     * @return bool
+     */
+    private function isGitRepository()
+    {
+        $path = $this->getRepositoryPath();
+        return is_dir($path . '/.git');
+    }
+
+    private function doInstall()
+    {
+        $installer = $this->getInstaller();
+
+        $installed = $installer->install(Installer::PRE_COMMIT);
+
+        /* @TODO: Ask user to force install once Installer::forceInstall() is implemented
+        try {
+        } catch(\UnexpectedValueException $exception){
+            if ($exception->getMessage() === Installer::ERROR_HOOK_ALREADY_EXISTS) {
+                $answer = $this->io->askConfirmation(self::MESSAGE_HOOK_ALREADY_EXISTS);
+                if ($answer === true) {
+                    $installed = $installer->forceInstall(Installer::PRE_COMMIT);
+                }
+            } else {
+                throw $exception;
+            }
+        }
+        */
+
+        return $installed;
+    }
+
+    /**
+     * @param string $message
+     *
+     * @return string
+     */
+    private function decorate($message)
+    {
+        $decorator = $this->getDecorator();
+
+        if ($decorator !== null) {
+            $message = $this->decorator->decorate($message);
+        }
+        return $message;
     }
 }
 
