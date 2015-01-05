@@ -2,11 +2,38 @@
 
 namespace DevNanny\Composer\Plugin;
 
-class MessageDecorator
-{
-    const PADDING_CHARACTER = ' ';
+use DevNanny\Composer\Plugin\Interfaces\DecoratorInterface;
 
-    private $subject = <<<'TXT'
+class MessageDecorator implements DecoratorInterface
+{
+    const MAX_LINE_LENGTH = 78;
+    const PADDING_CHARACTER = ' ';
+    const WORD_DELIMITER = ' ';
+
+    /**
+     * @return int
+     */
+    private function getLineLength()
+    {
+        static $maximumLineLength;
+
+        if ($maximumLineLength === null) {
+            $maximumLineLength = self::MAX_LINE_LENGTH -
+                $this->getSubjectWidth() -
+                strlen('|' . self::PADDING_CHARACTER . self::PADDING_CHARACTER . '|')
+            ;
+        }
+
+        return $maximumLineLength;
+    }
+
+    /**
+     * @return string
+     */
+    private function getSubject()
+    {
+        // @TODO: Read ASCII art from a file
+        return <<<'TXT'
         _
      .-' '-.
     /       \
@@ -25,10 +52,27 @@ class MessageDecorator
             \|/
     jgs    _/L\_
 TXT;
+    }
 
-    private $maxLineLength = 56;
+    /**
+     * @return int
+     */
+    private function getSubjectWidth()
+    {
+        static $subjectWidth;
 
-    private $subjectWidth = 18;
+        if ($subjectWidth === null) {
+            $subject = explode("\n", $this->getSubject());
+            foreach ($subject as $line) {
+                $length = strlen($line);
+                if ($length > $subjectWidth) {
+                    $subjectWidth = $length;
+                }
+            }
+        }
+
+        return $subjectWidth;
+    }
 
     final public function decorate($message)
     {
@@ -36,14 +80,14 @@ TXT;
 
         $length = strlen($message);
 
-        if ($length < $this->maxLineLength) {
+        if ($length < $this->getLineLength()) {
             $messageLines = array($message);
         } else {
-            $words = explode(' ', $message);
+            $words = explode(self::WORD_DELIMITER, $message);
             $currentLine = '';
             foreach ($words as $word) {
-                if (strlen($currentLine . ' ' . $word) < $this->maxLineLength) {
-                    $currentLine .= ' ' . $word;
+                if (strlen($currentLine . self::WORD_DELIMITER . $word) < $this->getLineLength()) {
+                    $currentLine .= self::WORD_DELIMITER . $word;
                 } else {
                     array_push($messageLines, $currentLine);
                     $currentLine = $word;
@@ -52,7 +96,7 @@ TXT;
             array_push($messageLines, $currentLine);
         }
 
-        return $this->addMessageLines($messageLines, $this->subject);
+        return $this->addMessageLines($messageLines, $this->getSubject());
     }
 
     private function addMessageLines(array $messageLines, $subject)
@@ -98,8 +142,7 @@ TXT;
      */
     private function addBalloonStart($line)
     {
-        return $this->pad($line) . self::PADDING_CHARACTER . '.--------------------------------------------------------.'
-        ;
+        return $this->buildBalloonEdge($line, '.');
     }
 
     /**
@@ -109,7 +152,7 @@ TXT;
      */
     private function addBalloonEnd($line)
     {
-        return $this->pad($line) . self::PADDING_CHARACTER . '`--------------------------------------------------------`';
+        return $this->buildBalloonEdge($line, '`');
     }
 
     /**
@@ -122,7 +165,7 @@ TXT;
     private function addBalloonLine($line, $message)
     {
         return $this->pad($line) . '|' . self::PADDING_CHARACTER .
-            str_pad($message, $this->maxLineLength, self::PADDING_CHARACTER, STR_PAD_BOTH) .
+            str_pad($message, $this->getLineLength(), self::PADDING_CHARACTER, STR_PAD_BOTH) .
         self::PADDING_CHARACTER . '|';
     }
 
@@ -133,7 +176,19 @@ TXT;
      */
     private function pad($line)
     {
-        return str_pad($line, $this->subjectWidth, self::PADDING_CHARACTER);
+        return str_pad($line, $this->getSubjectWidth(), self::PADDING_CHARACTER);
+    }
+
+    /**
+     * @param string $line
+     * @param string $corner
+     *
+     * @return string
+     */
+    private function buildBalloonEdge($line, $corner)
+    {
+        return $this->pad($line) . self::PADDING_CHARACTER .
+        ($corner . str_repeat('-', $this->getLineLength()) . $corner);
     }
 }
 
