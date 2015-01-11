@@ -6,10 +6,39 @@ use DevNanny\Composer\Plugin\Interfaces\DecoratorInterface;
 
 class MessageDecorator implements DecoratorInterface
 {
-    const MAX_LINE_LENGTH = 78;
+    ////////////////////////////// CLASS PROPERTIES \\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    const MAX_LINE_LENGTH = 72;
     const PADDING_CHARACTER = ' ';
     const WORD_DELIMITER = ' ';
 
+    //////////////////////////// SETTERS AND GETTERS \\\\\\\\\\\\\\\\\\\\\\\\\\\
+    //////////////////////////////// PUBLIC API \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    final public function decorate($message)
+    {
+        $messageLines = array();
+
+        $length = strlen($message);
+
+        if ($length < $this->getLineLength()) {
+            $messageLines = array($message);
+        } else {
+            $words = explode(self::WORD_DELIMITER, $message);
+            $currentLine = '';
+            foreach ($words as $word) {
+                if (strlen($currentLine . self::WORD_DELIMITER . $word) < $this->getLineLength()) {
+                    $currentLine .= self::WORD_DELIMITER . $word;
+                } else {
+                    array_push($messageLines, $currentLine);
+                    $currentLine = $word;
+                }
+            }
+            array_push($messageLines, $currentLine);
+        }
+
+        return $this->addMessageLines($messageLines, $this->getSubject());
+    }
+
+    ////////////////////////////// UTILITY METHODS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\
     /**
      * @return int
      */
@@ -72,31 +101,6 @@ TXT;
         }
 
         return $subjectWidth;
-    }
-
-    final public function decorate($message)
-    {
-        $messageLines = array();
-
-        $length = strlen($message);
-
-        if ($length < $this->getLineLength()) {
-            $messageLines = array($message);
-        } else {
-            $words = explode(self::WORD_DELIMITER, $message);
-            $currentLine = '';
-            foreach ($words as $word) {
-                if (strlen($currentLine . self::WORD_DELIMITER . $word) < $this->getLineLength()) {
-                    $currentLine .= self::WORD_DELIMITER . $word;
-                } else {
-                    array_push($messageLines, $currentLine);
-                    $currentLine = $word;
-                }
-            }
-            array_push($messageLines, $currentLine);
-        }
-
-        return $this->addMessageLines($messageLines, $this->getSubject());
     }
 
     private function addMessageLines(array $messageLines, $subject)

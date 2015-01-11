@@ -3,6 +3,7 @@
 namespace DevNanny\Composer\Plugin;
 
 use Composer\Composer;
+use Composer\Config;
 use Composer\IO\IOInterface;
 use Composer\Script\CommandEvent;
 use Composer\Script\ScriptEvents;
@@ -11,6 +12,7 @@ use DevNanny\Connector\BaseTestCase;
 use DevNanny\GitHook\Installer;
 use DevNanny\GitHook\Interfaces\InstallerInterface;
 use DevNanny\GitHook\Interfaces\RepositoryContainerInterface;
+use PHPUnit_Framework_MockObject_MockObject as MockObject;
 
 /**
  * @coversDefaultClass DevNanny\Composer\Plugin\GitHookInstaller
@@ -21,10 +23,13 @@ class GitHookInstallerTest extends BaseTestCase
     ////////////////////////////////// FIXTURES \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
     const ERROR_METHOD_DOES_NOT_EXIST = 'Subscribing non-public or non-existing method(s)';
     const ERROR_EVENT_DOES_NOT_EXIST = 'Subscribing to invalid event';
-    /** @var IOInterface|\PHPUnit_Framework_MockObject_MockObject */
-    private $mockIo;
+
     /** @var GitHookInstaller */
     private $installer;
+    /** @var Composer|MockObject */
+    private $mockComposer;
+    /** @var IOInterface|MockObject */
+    private $mockIo;
 
     protected function setUp()
     {
@@ -131,23 +136,25 @@ class GitHookInstallerTest extends BaseTestCase
         $installer->install();
     }
 
+    /**
+     * @covers ::install
+     */
     final public function testInstallerShouldComplainWhenAskedToInstallOutsideOfGitRepository()
     {
-        $this->markTestSkipped('This can not be tested until the filesystem can be mocked');
-
         $installer = $this->installer;
 
         $this->addMockDecorator($installer);
         $this->addMockContainer($installer);
         $this->addMockInstaller($installer);
-        $mockEvent = $this->getMockEvent();
+        $mockConfig = $this->getMockConfig(realpath(__DIR__ . '/../'));
+        $mockEvent = $this->getMockEvent($mockConfig);
         $mockIo = $this->mockIo;
 
         $mockIo->expects($this->exactly(1))
             ->method('write')
             ->with(
                 $this->matchesRegularExpression(
-                    '#' . sprintf(GitHookInstaller::MESSAGE_NOT_A_GIT_REPOSITORY, __DIR__) . '#'
+                    '#' . sprintf(GitHookInstaller::MESSAGE_NOT_A_GIT_REPOSITORY, realpath(__DIR__ . '/../../')) . '#'
                 )
             )
         ;
@@ -165,7 +172,8 @@ class GitHookInstallerTest extends BaseTestCase
         $this->addMockDecorator($installer);
         $this->addMockContainer($installer);
         $mockInstaller = $this->addMockInstaller($installer);
-        $mockEvent = $this->getMockEvent();
+        $mockConfig = $this->getMockConfig(__DIR__);
+        $mockEvent = $this->getMockEvent($mockConfig);
 
         $mockInstaller->expects($this->exactly(1))
             ->method('install')
@@ -186,7 +194,8 @@ class GitHookInstallerTest extends BaseTestCase
         $this->addMockDecorator($installer);
         $this->addMockContainer($installer);
         $mockInstaller = $this->addMockInstaller($installer);
-        $mockEvent = $this->getMockEvent();
+        $mockConfig = $this->getMockConfig(__DIR__);
+        $mockEvent = $this->getMockEvent($mockConfig);
         $mockIo = $this->mockIo;
 
         $mockInstaller->expects($this->exactly(1))
@@ -259,7 +268,8 @@ class GitHookInstallerTest extends BaseTestCase
         $this->addMockDecorator($installer);
         $this->addMockContainer($installer);
         $mockInstaller = $this->addMockInstaller($installer);
-        $mockEvent = $this->getMockEvent();
+        $mockConfig = $this->getMockConfig(__DIR__);
+        $mockEvent = $this->getMockEvent($mockConfig);
         $mockIo = $this->mockIo;
 
         $mockInstaller->expects($this->exactly(1))
@@ -281,7 +291,7 @@ class GitHookInstallerTest extends BaseTestCase
 
     ////////////////////////////// MOCKS AND STUBS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\
     /**
-     * @return Composer|\PHPUnit_Framework_MockObject_MockObject
+     * @return Composer|MockObject
      */
     private function getMockComposer()
     {
@@ -289,20 +299,56 @@ class GitHookInstallerTest extends BaseTestCase
     }
 
     /**
-     * @return CommandEvent|\PHPUnit_Framework_MockObject_MockObject
+     * @param $vendorDirectory
+     *
+     * @return MockObject
      */
-    private function getMockEvent()
+    private function getMockConfig($vendorDirectory)
     {
+        $mockConfig = $this->getMockBuilder(Config::class)
+            ->disableOriginalConstructor()
+            ->getMock()
+        ;
+
+        $mockConfig->expects($this->atLeastOnce())
+            ->method('get')
+            ->with(GitHookInstaller::VENDOR_DIR)
+            ->willReturn($vendorDirectory);
+
+        return $mockConfig;
+    }
+
+    /**
+     * @param MockObject $mockConfig
+     *
+     * @return CommandEvent|MockObject
+     */
+    private function getMockEvent(MockObject $mockConfig = null)
+    {
+        $this->mockIo = $this->getMockBuilder(IOInterface::class)->getMock();
+        $this->mockComposer = $this->getMockComposer();
+
         $mockEvent = $this->getMockBuilder(CommandEvent::class)
             ->disableOriginalConstructor()
-            ->getMock();
-
-        $this->mockIo = $this->getMockBuilder(IOInterface::class)->getMock();
+            ->getMock()
+        ;
 
         $mockEvent->expects($this->exactly(1))
             ->method('getIO')
             ->willReturn($this->mockIo)
         ;
+
+        $mockEvent->expects($this->exactly(1))
+            ->method('getComposer')
+            ->willReturn($this->mockComposer)
+        ;
+
+        if (isset($mockConfig)) {
+            $this->mockComposer->expects($this->atLeastOnce())
+                ->method('getConfig')
+                ->willReturn($mockConfig)
+            ;
+        }
 
         return $mockEvent;
     }
@@ -310,7 +356,7 @@ class GitHookInstallerTest extends BaseTestCase
     /**
      * @param GitHookInstaller $installer
      *
-     * @return DecoratorInterface|\PHPUnit_Framework_MockObject_MockObject
+     * @return DecoratorInterface|MockObject
      */
     private function addMockDecorator(GitHookInstaller $installer)
     {
@@ -331,7 +377,7 @@ class GitHookInstallerTest extends BaseTestCase
     /**
      * @param GitHookInstaller $installer
      *
-     * @return InstallerInterface|\PHPUnit_Framework_MockObject_MockObject
+     * @return InstallerInterface|MockObject
      */
     private function addMockInstaller(GitHookInstaller $installer)
     {
