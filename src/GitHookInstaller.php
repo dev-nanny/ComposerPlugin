@@ -18,6 +18,7 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
     ////////////////////////////// CLASS PROPERTIES \\\\\\\\\\\\\\\\\\\\\\\\\\\\
     const VENDOR = 'dev-nanny';
     const PROJECT = 'composer-plugin';
+    const VENDOR_DIR = 'vendor-dir';
 
     const MESSAGE_HOOK_ALREADY_EXISTS = 'Another pre-commit hook already exists. Do you want to replace it?';
     const MESSAGE_INSTALL_SUCCESS = 'Installed %s pre-commit hook';
@@ -91,12 +92,13 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
 
     final public function install(CommandEvent $event)
     {
+        $this->composer = $event->getComposer();
         $this->io = $event->getIO();
 
         if ($this->isGitRepository() === false) {
             $this->write(
                 'error',
-                self::MESSAGE_INSTALL_FAILURE . '.' . self::MESSAGE_NOT_A_GIT_REPOSITORY,
+                self::MESSAGE_INSTALL_FAILURE . '. ' . self::MESSAGE_NOT_A_GIT_REPOSITORY,
                 self::VENDOR,
                 $this->getRepositoryPath()
             );
@@ -117,19 +119,12 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
      */
     private function getRepositoryPath()
     {
-        static $path;
+        $vendorDirectory = $this->getVendorDirectory();
 
-        if ($path === null) {
-            $currentDirectory = __DIR__;
-
-            $vendorDirectory = 'vendor/' . self::VENDOR . '/' . self::PROJECT . '/src';
-            $length = strlen($vendorDirectory);
-            if (substr($currentDirectory, -$length) === $vendorDirectory) {
-                $path = substr($currentDirectory, 0, -$length);
-            } else {
-                $path = substr($currentDirectory, 0, -strlen('src'));
-            }
-        }
+        // @CHECKME: Couldn't this code break if a custom `vendor-dir` is used?
+        $parts = explode(DIRECTORY_SEPARATOR, $vendorDirectory);
+        array_pop($parts); // Remove 'vendor'
+        $path = implode(DIRECTORY_SEPARATOR, $parts);
 
         return $path;
     }
@@ -196,6 +191,14 @@ class GitHookInstaller implements PluginInterface,  EventSubscriberInterface
             $message = $this->decorator->decorate($message);
         }
         return $message;
+    }
+
+    /**
+     * @return mixed
+     */
+    private function getVendorDirectory()
+    {
+        return $this->composer->getConfig()->get(self::VENDOR_DIR);
     }
 }
 
