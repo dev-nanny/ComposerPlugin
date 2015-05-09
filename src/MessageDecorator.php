@@ -7,6 +7,7 @@ use DevNanny\Composer\Plugin\Interfaces\DecoratorInterface;
 class MessageDecorator implements DecoratorInterface
 {
     ////////////////////////////// CLASS PROPERTIES \\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    const DECORATION_FILE = 'dev-nanny.ascii';
     const MAX_LINE_LENGTH = 72;
     const PADDING_CHARACTER = ' ';
     const WORD_DELIMITER = ' ';
@@ -61,26 +62,7 @@ class MessageDecorator implements DecoratorInterface
      */
     private function getSubject()
     {
-        // @TODO: Read ASCII art from a file
-        return <<<'TXT'
-        _
-     .-' '-.
-    /       \
-   |,-,-,-,-,|
-        |   ___
-        |  _)_(_
-        |  (/ \) /
-       (\  _\_/_
-        \\/ \ / \
-         \/(   )|
-            )_(||
-           /   \|
-           |   |n
-           |   / \
-           |___|_|
-            \|/
-    jgs    _/L\_
-TXT;
+        return file_get_contents(__DIR__ . '/' . self::DECORATION_FILE);
     }
 
     /**
